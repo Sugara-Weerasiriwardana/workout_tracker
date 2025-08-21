@@ -6,8 +6,12 @@ import me.sugara.workout_tracker.repository.*;
 import org.springframework.stereotype.Service;
 import jakarta.transaction.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.Map;
 
 @Service
 public class WorkoutService {
@@ -77,45 +81,43 @@ public class WorkoutService {
         return response;
     }
 
-  
+    @Transactional
+    public WorkoutResponse updateWorkout(Long userId, Long workoutId, WorkoutRequest request) {
+        Workout workout = workoutRepo.findById(workoutId)
+                .orElseThrow(() -> new RuntimeException("Workout not found"));
 
-@Transactional
-public WorkoutResponse updateWorkout(Long userId, Long workoutId, WorkoutRequest request) {
-    Workout workout = workoutRepo.findById(workoutId)
-            .orElseThrow(() -> new RuntimeException("Workout not found"));
+        // Ensure workout belongs to the logged-in user
+        if (!workout.getUser().getId().equals(userId)) {
+            throw new RuntimeException("Unauthorized to update this workout");
+        }
 
-    // Ensure workout belongs to the logged-in user
-    if (!workout.getUser().getId().equals(userId)) {
-        throw new RuntimeException("Unauthorized to update this workout");
+        // Update workout details
+        workout.setScheduledAt(request.getScheduledAt());
+        workout.setNotes(request.getNotes());
+
+        // Clear existing exercises to trigger orphan removal
+        workout.getWorkoutExercises().clear();
+
+        // Add new exercises
+        List<WorkoutExercise> newExercises = request.getExercises().stream().map(ex -> {
+            Exercise exercise = exerciseRepo.findById(ex.getExerciseId())
+                    .orElseThrow(() -> new RuntimeException("Exercise not found"));
+            return WorkoutExercise.builder()
+                    .workout(workout)
+                    .exercise(exercise)
+                    .sets(ex.getSets())
+                    .reps(ex.getReps())
+                    .weight(ex.getWeight())
+                    .build();
+        }).collect(Collectors.toList());
+
+        workout.getWorkoutExercises().addAll(newExercises);
+
+        // Save workout (Hibernate will handle cascade and orphan removal)
+        workoutRepo.save(workout);
+
+        return mapToResponse(workout);
     }
-
-    // Update workout details
-    workout.setScheduledAt(request.getScheduledAt());
-    workout.setNotes(request.getNotes());
-
-    // Clear existing exercises to trigger orphan removal
-    workout.getWorkoutExercises().clear();
-
-    // Add new exercises
-    List<WorkoutExercise> newExercises = request.getExercises().stream().map(ex -> {
-        Exercise exercise = exerciseRepo.findById(ex.getExerciseId())
-                .orElseThrow(() -> new RuntimeException("Exercise not found"));
-        return WorkoutExercise.builder()
-                .workout(workout)
-                .exercise(exercise)
-                .sets(ex.getSets())
-                .reps(ex.getReps())
-                .weight(ex.getWeight())
-                .build();
-    }).collect(Collectors.toList());
-
-    workout.getWorkoutExercises().addAll(newExercises);
-
-    // Save workout (Hibernate will handle cascade and orphan removal)
-    workoutRepo.save(workout);
-
-    return mapToResponse(workout);
-}
 
     public void deleteWorkout(Long userId, Long workoutId) {
         Workout workout = workoutRepo.findById(workoutId)
@@ -126,5 +128,49 @@ public WorkoutResponse updateWorkout(Long userId, Long workoutId, WorkoutRequest
         }
 
         workoutRepo.delete(workout);
+    }
+
+    public WorkoutReportResponse generateReport(Long userId) {
+        List<Workout> pastWorkouts = workoutRepo.findByUserIdAndScheduledAtBefore(userId, LocalDateTime.now());
+
+        Map<String, ExerciseProgress> progressMap = new HashMap<>();
+
+        List<WorkoutSummary> summaries = pastWorkouts.stream().map(workout -> {
+            WorkoutSummary summary = new WorkoutSummary();
+            summary.setWorkoutId(workout.getId());
+            summary.setNotes(workout.getNotes());
+            summary.setDate(workout.getScheduledAt().toString());
+
+            List<WorkoutExerciseResponse> exResponses = workout.getWorkoutExercises().stream().map(we -> {
+                String exerciseName = we.getExercise().getName();
+                ExerciseProgress p = progressMap.getOrDefault(exerciseName, new ExerciseProgress());
+                p.setExerciseName(exerciseName);
+
+                int reps = we.getReps() != null ? we.getReps() : 0;
+                int sets = we.getSets() != null ? we.getSets() : 0;
+                double weight = we.getWeight() != null ? we.getWeight() : 0.0;
+
+                p.setTotalReps((p.getTotalReps() == null ? 0 : p.getTotalReps()) + (reps * sets));
+                p.setMaxWeight((p.getMaxWeight() == null) ? weight : Math.max(p.getMaxWeight(), weight));
+                p.setWorkoutCount((p.getWorkoutCount() == null ? 0 : p.getWorkoutCount()) + 1);
+                progressMap.put(exerciseName, p);
+
+                WorkoutExerciseResponse wr = new WorkoutExerciseResponse();
+                wr.setExerciseName(exerciseName);
+                wr.setSets(sets);
+                wr.setReps(reps);
+                wr.setWeight(weight);
+                return wr;
+            }).toList();
+
+            summary.setExercises(exResponses);
+            return summary;
+        }).toList();
+
+        WorkoutReportResponse report = new WorkoutReportResponse();
+        report.setPastWorkouts(summaries);
+        report.setProgress(new ArrayList<>(progressMap.values()));
+
+        return report;
     }
 }

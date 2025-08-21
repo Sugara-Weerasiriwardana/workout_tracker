@@ -1,5 +1,6 @@
 package me.sugara.workout_tracker.controller;
 
+import me.sugara.workout_tracker.dto.WorkoutReportResponse;
 import me.sugara.workout_tracker.dto.WorkoutRequest;
 import me.sugara.workout_tracker.dto.WorkoutResponse;
 import me.sugara.workout_tracker.service.WorkoutService;
@@ -40,7 +41,6 @@ public class WorkoutController {
         return ResponseEntity.ok(workoutService.getUserWorkouts(userId));
     }
 
-   
     @PutMapping("/{id}")
     public ResponseEntity<WorkoutResponse> updateWorkout(
             @PathVariable Long id,
@@ -55,6 +55,12 @@ public class WorkoutController {
         Long userId = getCurrentUserId();
         workoutService.deleteWorkout(userId, id);
         return ResponseEntity.ok("Workout deleted successfully");
+    }
+
+    @GetMapping("/report")
+    public ResponseEntity<WorkoutReportResponse> getWorkoutReport() {
+        Long userId = getCurrentUserId();
+        return ResponseEntity.ok(workoutService.generateReport(userId));
     }
 
 }
