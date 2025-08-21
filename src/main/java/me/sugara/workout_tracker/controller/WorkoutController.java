@@ -7,11 +7,14 @@ import me.sugara.workout_tracker.service.WorkoutService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/workouts")
+@Tag(name = "Workouts", description = "Manage user workout plans")
 public class WorkoutController {
 
     private final WorkoutService workoutService;
@@ -29,18 +32,21 @@ public class WorkoutController {
         return userRepo.findByUsername(username).orElseThrow().getId();
     }
 
+    @Operation(summary = "Create a new workout", description = "Adds a new workout plan for the logged-in user")
     @PostMapping
     public ResponseEntity<WorkoutResponse> createWorkout(@RequestBody WorkoutRequest request) {
         Long userId = getCurrentUserId();
         return ResponseEntity.ok(workoutService.createWorkout(userId, request));
     }
 
+    @Operation(summary = "Get all workouts", description = "Retrieve all workout plans for the logged-in user")
     @GetMapping
     public ResponseEntity<List<WorkoutResponse>> getUserWorkouts() {
         Long userId = getCurrentUserId();
         return ResponseEntity.ok(workoutService.getUserWorkouts(userId));
     }
 
+    @Operation(summary = "Update workout", description = "Update an existing workout plan")
     @PutMapping("/{id}")
     public ResponseEntity<WorkoutResponse> updateWorkout(
             @PathVariable Long id,
@@ -50,6 +56,7 @@ public class WorkoutController {
         return ResponseEntity.ok(workoutService.updateWorkout(userId, id, request));
     }
 
+    @Operation(summary = "Delete workout", description = "Delete a workout plan by ID")
     @DeleteMapping("/{id}")
     public ResponseEntity<String> deleteWorkout(@PathVariable Long id) {
         Long userId = getCurrentUserId();
@@ -57,6 +64,7 @@ public class WorkoutController {
         return ResponseEntity.ok("Workout deleted successfully");
     }
 
+    @Operation(summary = "Generate report", description = "Get past workouts and progress summary")
     @GetMapping("/report")
     public ResponseEntity<WorkoutReportResponse> getWorkoutReport() {
         Long userId = getCurrentUserId();
